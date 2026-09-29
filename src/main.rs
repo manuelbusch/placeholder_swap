@@ -56,7 +56,7 @@ fn main() -> Result<()> {
 
     // Read config
     let cfg_str = fs::read_to_string(&common.config)
-        .with_context(|| format!("Could not read config: {:?}", common.config))?;
+        .with_context(|| format!("Could not read config: {}", common.config.display()))?;
     let cfg: Config = toml::from_str(&cfg_str).context("Could not parse TOML")?;
 
     if cfg.placeholders.is_empty() {
@@ -64,16 +64,15 @@ fn main() -> Result<()> {
     }
 
     // Read input: file or STDIN
-    let input_text = match &common.input {
-        Some(path) => fs::read_to_string(path)
-            .with_context(|| format!("Could not read input file: {:?}", path))?,
-        None => {
-            let mut buf = String::new();
-            io::stdin()
-                .read_to_string(&mut buf)
-                .context("Could not read STDIN")?;
-            buf
-        }
+    let input_text = if let Some(path) = &common.input {
+        fs::read_to_string(path)
+            .with_context(|| format!("Could not read input file: {}", path.display()))?
+    } else {
+        let mut buf = String::new();
+        io::stdin()
+            .read_to_string(&mut buf)
+            .context("Could not read STDIN")?;
+        buf
     };
 
     // Transform
@@ -86,7 +85,7 @@ fn main() -> Result<()> {
     if common.inplace {
         let in_path = common.input.as_ref().expect("checked above");
         fs::write(in_path, output_text)
-            .with_context(|| format!("Could not overwrite input file: {:?}", in_path))?;
+            .with_context(|| format!("Could not overwrite input file: {}", in_path.display()))?;
     } else {
         let mut out = io::stdout().lock();
         out.write_all(output_text.as_bytes())
@@ -102,7 +101,7 @@ fn replace_placeholders_with_values(input: &str, cfg: &Config) -> String {
     let mut pairs: Vec<(String, String)> = cfg
         .placeholders
         .iter()
-        .map(|(k, v)| (format!("[{}]", k), v.clone()))
+        .map(|(k, v)| (format!("[{k}]"), v.clone()))
         .collect();
 
     pairs.sort_by_key(|(ph, _)| std::cmp::Reverse(ph.len()));
@@ -122,28 +121,21 @@ fn replace_values_with_placeholders(input: &str, cfg: &Config) -> Result<String>
     for (k, v) in &cfg.placeholders {
         if let Some(existing_key) = seen_values.insert(v.as_str(), k.as_str()) {
             bail!(
-                "Ambiguous reverse replacement: value {:?} is defined for both key {:?} and {:?}.",
-                v,
-                existing_key,
-                k
+                "Ambiguous reverse replacement: value {v:?} is defined for both key {existing_key:?} and {k:?}."
             );
         }
     }
 
-    let patterns: Vec<&str> = cfg.placeholders.values().map(|s| s.as_str()).collect();
+    let patterns: Vec<&str> = cfg.placeholders.values().map(String::as_str).collect();
 
-    let replacements: Vec<String> = cfg
-        .placeholders
-        .keys()
-        .map(|k| format!("[{}]", k))
-        .collect();
+    let replacements: Vec<String> = cfg.placeholders.keys().map(|k| format!("[{k}]")).collect();
 
     let ac: AhoCorasick = AhoCorasickBuilder::new()
         .match_kind(MatchKind::LeftmostLongest)
         .build(patterns)
         .context("Aho-Corasick build failed")?;
 
-    let replacement_refs: Vec<&str> = replacements.iter().map(|s| s.as_str()).collect();
+    let replacement_refs: Vec<&str> = replacements.iter().map(String::as_str).collect();
 
     Ok(ac.replace_all(input, &replacement_refs))
 }
@@ -268,10 +260,7 @@ mod tests {
 
     #[test]
     fn roundtrip_reverse_then_forward() {
-        let cfg = make_config(&[
-            ("HOST", "server01.example.com"),
-            ("DB", "production_db"),
-        ]);
+        let cfg = make_config(&[("HOST", "server01.example.com"), ("DB", "production_db")]);
         let concrete = "server01.example.com/production_db";
         let templatized = replace_values_with_placeholders(concrete, &cfg).unwrap();
         let expanded = replace_placeholders_with_values(&templatized, &cfg);
