@@ -173,3 +173,23 @@ fn roundtrip_via_cli() {
         .success()
         .stdout(template);
 }
+
+#[test]
+fn reverse_empty_value_fails() {
+    let dir = TempDir::new().unwrap();
+    let cfg = write_config(
+        &dir,
+        r#"
+[placeholders]
+E = ""
+"#,
+    );
+
+    Command::cargo_bin("placeholder_swap")
+        .unwrap()
+        .args(["reverse", cfg.to_str().unwrap()])
+        .write_stdin("abc")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("empty value"));
+}

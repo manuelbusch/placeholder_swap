@@ -119,6 +119,9 @@ fn replace_placeholders_with_values(input: &str, cfg: &Config) -> String {
 fn replace_values_with_placeholders(input: &str, cfg: &Config) -> Result<String> {
     let mut seen_values: BTreeMap<&str, &str> = BTreeMap::new();
     for (k, v) in &cfg.placeholders {
+        if v.is_empty() {
+            bail!("Cannot reverse empty value: key {k:?} has an empty value.");
+        }
         if let Some(existing_key) = seen_values.insert(v.as_str(), k.as_str()) {
             bail!(
                 "Ambiguous reverse replacement: value {v:?} is defined for both key {existing_key:?} and {k:?}."
@@ -234,6 +237,15 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("Ambiguous"));
+    }
+
+    #[test]
+    fn reverse_empty_value_error() {
+        let cfg = make_config(&[("E", ""), ("HOST", "example.com")]);
+        let result = replace_values_with_placeholders("abc", &cfg);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("empty value"));
     }
 
     #[test]
